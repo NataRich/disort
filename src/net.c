@@ -1,5 +1,10 @@
 #include "net.h"
 
+static const struct timeval default_tmot = {
+    .tv_sec = 5,
+    .tv_usec = 0,
+};
+
 int init_client(const char *ip, u_short port)
 {
     int handle;
@@ -77,7 +82,7 @@ int accept_conn(int handle, struct sockaddr_in *client)
     return new_handle;
 }
 
-void send_data(int handle, void *data, size_t size, bool more)
+void send_data(int handle, void *data, size_t size, struct timeval *tmot)
 {
     if (data == NULL)
     {
@@ -90,25 +95,30 @@ void send_data(int handle, void *data, size_t size, bool more)
         return;
     }
 
-    int ret, flags;
+    int ret;
+    struct timeval t;
 
-    flags = more ? MSG_MORE : 0;
-    ret = send(handle, data, size, flags);
+    t.tv_sec = tmot == NULL ? default_tmot.tv_sec : tmot->tv_sec;
+    t.tv_usec = tmot == NULL ? default_tmot.tv_usec : tmot->tv_usec;
+    ret = setsockopt(handle, SOL_SOCKET, SO_SNDTIMEO, &t, sizeof(t));
+    if (ret < 0)
+    {
+        error("[Error]: Failed to set timeout for send operation\n");
+        return;
+    }
+
+    ret = send(handle, data, size, 0);
     if (ret < 0)
     {
         error("[Error]: Failed to send\n");
     }
-    else if (more)
-    {
-        info("[Info]: Sent %dB of data with more coming\n", ret);
-    }
     else
     {
-        info("[Info]: Sent the last %dB of data\n", ret);
+        info("[Info]: Sent %dB of data\n", ret);
     }
 }
 
-void recv_data(int handle, void *buffer, size_t size)
+void recv_data(int handle, void *buffer, size_t size, struct timeval *tmot)
 {
     if (buffer == NULL)
     {
@@ -122,6 +132,16 @@ void recv_data(int handle, void *buffer, size_t size)
     }
 
     int ret;
+    struct timeval t;
+
+    t.tv_sec = tmot == NULL ? default_tmot.tv_sec : tmot->tv_sec;
+    t.tv_usec = tmot == NULL ? default_tmot.tv_usec : tmot->tv_usec;
+    ret = setsockopt(handle, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof(t));
+    if (ret < 0)
+    {
+        error("[Error]: Failed to set timeout for send operation\n");
+        return;
+    }
 
     ret = recv(handle, buffer, size, 0);
     if (ret < 0)

@@ -9,8 +9,8 @@
 
 #include "utils.h"
 
-#define kQueueMax 5           // listen queue size
-#define kDataBufferMax 655000 // data buffer size
+#define kQueueMax 5          // listen queue size
+#define kDataBufferMax 65536 // data buffer size
 
 struct node
 {
@@ -49,12 +49,10 @@ int accept_conn(int handle, struct sockaddr_in *client);
  *
  * @param handle The established socket.
  * @param data The data to be sent.
- * @param size The size of data (max: 1MB).
- * @param more The flag telling whether there are more data.
- *
- * @note Don't set more field to true for now!
+ * @param size The size of data (max: 64KB).
+ * @param tmot The timeout for send operation.
  */
-void send_data(int handle, void *data, size_t size, bool more);
+void send_data(int handle, void *data, size_t size, struct timeval *tmot);
 
 /**
  * Receives data from the socket.
@@ -62,8 +60,9 @@ void send_data(int handle, void *data, size_t size, bool more);
  * @param handle The established socket.
  * @param buffer The buffer to hold received data.
  * @param size The size of the buffer, and of the received data.
+ * @param tmot The timeout for receive operation.
  */
-void recv_data(int handle, void *buffer, size_t size);
+void recv_data(int handle, void *buffer, size_t size, struct timeval *tmot);
 
 // TODO: consider multithreading in socket
 
