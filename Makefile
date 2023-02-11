@@ -8,25 +8,30 @@ CFLAGS := -c -Wall -I$(INC_DIR)/  # -I shortens the include path to header files
 COFLAG := -O2
 CSTD := gnu99
 
-SRCS := $(SRC_DIR)/main.c
+SRCS := $(SRC_DIR)/main.c $(SRC_DIR)/net.c $(SRC_DIR)/utils.c 
 OBJS := $(SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)  # substitution
-DEPS := $(SRCS:$(SRC_DIR)/%.c=$(INC_DIR)/%.h)  # substitution
 
-MASNAME := master
-MASOUT := $(BIN_DIR)/$(MASNAME)
+NAME := spawn
+OUT := $(BIN_DIR)/$(NAME)
 
-all: $(MASOUT)
+all: $(OUT)
 
 # $@ replaces with the entire left part of :
 # $^ replaces with the entire right part of :
-$(MASOUT): $(OBJS)
+$(OUT): $(OBJS)
 	$(CC) -o $@ $(COFLAG) -std=$(CSTD) $^
 
 # $< replaces with the first item in the dependency list
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(DEPS)
+$(OBJ_DIR)/main.o: $(SRC_DIR)/main.c $(INC_DIR)/net.h $(INC_DIR)/utils.h
+	$(CC) $(CFLAGS) -std=$(CSTD) $< -o $@
+
+$(OBJ_DIR)/utils.o: $(SRC_DIR)/utils.c $(INC_DIR)/utils.h
+	$(CC) $(CFLAGS) -std=$(CSTD) $< -o $@
+
+$(OBJ_DIR)/net.o: $(SRC_DIR)/net.c $(INC_DIR)/net.h
 	$(CC) $(CFLAGS) -std=$(CSTD) $< -o $@
 
 .PHONY: clean
 clean:
 	rm -f *.dat
-	rm -f ./$(MASOUT)
+	rm -f ./$(OUT)
