@@ -9,8 +9,14 @@
 
 #include "utils.h"
 
-#define kQueueMax 5         // listen queue size
-#define kDataBufferMax 10e6 // data buffer size
+#define kQueueMax 5           // listen queue size
+#define kDataBufferMax 655000 // data buffer size
+
+struct node
+{
+    char addr[30]; // IPv4 address
+    unsigned short port;
+};
 
 /**
  * Initializes a socket connection to the given server.
