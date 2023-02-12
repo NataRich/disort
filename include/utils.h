@@ -6,7 +6,19 @@
 #include <stdarg.h>
 #include <string.h>
 
-#define kBufferSize 1024
+#define MAX_BUFFER_SIZE 1024
+
+/**
+ * Checks if the current process is a child process.
+ *
+ * @return 0 if the current process is a child else 1.
+ */
+int is_child();
+
+/**
+ * Exits the process safely considering child/parent processes.
+ */
+void safe_exit(int status);
 
 /**
  * Prints formatted string to standard error.
