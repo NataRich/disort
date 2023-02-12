@@ -1,75 +1,78 @@
 #include "net.h"
 
-static const struct timeval default_tmot = {
+static const struct timeval default_tv = {
     .tv_sec = 5,
     .tv_usec = 0,
 };
 
 int init_client(const char *ip, u_short port)
 {
-    int handle;
+    int sockfd;
     struct sockaddr_in sockaddr;
 
-    handle = socket(AF_INET, SOCK_STREAM, 0);
-    if (handle == -1)
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1)
     {
-        error("[Error]: Failed to create a socket\n");
-        exit(EXIT_FAILURE);
+        error("[Error]: Failed to create a stream socket\n");
+        safe_exit(EXIT_FAILURE);
     }
 
     sockaddr.sin_addr.s_addr = inet_addr(ip);
     sockaddr.sin_family = AF_INET;
     sockaddr.sin_port = htons(port);
 
-    if (connect(handle, (struct sockaddr *)&sockaddr, sizeof(sockaddr)) < 0)
+    if (connect(sockfd, (struct sockaddr *)&sockaddr, sizeof(sockaddr)) < 0)
     {
         error("[Error]: Failed to connect to %s:%d\n", ip, port);
-        exit(EXIT_FAILURE);
+        safe_exit(EXIT_FAILURE);
     }
 
-    info("[Info]: Successfully created a connection to %s:%d\n", ip, port);
+    info("[Info]: Successfully connected to %s:%d\n", ip, port);
 
-    return handle;
+    return sockfd;
 }
 
 int init_server(u_short port)
 {
-    int handle;
+    int sockfd;
     struct sockaddr_in sockaddr;
 
-    handle = socket(AF_INET, SOCK_STREAM, 0);
-    if (handle == -1)
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1)
     {
         error("[Error]: Failed to create a socket\n");
-        exit(EXIT_FAILURE);
+        safe_exit(EXIT_FAILURE);
     }
 
     sockaddr.sin_addr.s_addr = INADDR_ANY;
     sockaddr.sin_family = AF_INET;
     sockaddr.sin_port = htons(port);
 
-    if (bind(handle, (struct sockaddr *)&sockaddr, sizeof(sockaddr)) < 0)
+    if (bind(sockfd, (struct sockaddr *)&sockaddr, sizeof(sockaddr)) < 0)
     {
-        error("[Error]: Failed to bind to the port %d\n", port);
-        exit(EXIT_FAILURE);
+        error("[Error]: Failed to bind to the port %d to socket\n", port);
+        safe_exit(EXIT_FAILURE);
     }
 
-    listen(handle, kQueueMax);
+    if (listen(sockfd, MAX_SOCK_QUEUE) < 0)
+    {
+        error("[Error]: Failed to prepare to accept connections\n");
+        safe_exit(EXIT_FAILURE);
+    }
 
-    info("[Info]: Successfully bound the port %d to process\n", port);
-    info("[Info]: Listening to %d\n", port);
+    info("[Info]: Listening on %d\n", port);
 
-    return handle;
+    return sockfd;
 }
 
-int accept_conn(int handle, struct sockaddr_in *client)
+int accept_conn(int sockfd, struct sockaddr_in *client)
 {
-    int new_handle, len, client_port;
+    int nsockfd, len, client_port;
     char *client_ip;
 
     len = sizeof(struct sockaddr_in);
-    new_handle = accept(handle, (struct sockaddr *)client, (socklen_t *)&len);
-    if (new_handle < 0)
+    nsockfd = accept(sockfd, (struct sockaddr *)client, (socklen_t *)&len);
+    if (nsockfd < 0)
     {
         error("[Error]: Failed to accept connection\n");
         return -1;
@@ -77,66 +80,63 @@ int accept_conn(int handle, struct sockaddr_in *client)
 
     client_ip = inet_ntoa(client->sin_addr);
     client_port = ntohs(client->sin_port);
-    info("[Info]: Accepted connection to %s:%d\n", client_ip, client_port);
 
-    return new_handle;
+    info("[Info]: Successfully connected to %s:%d\n", client_ip, client_port);
+
+    return nsockfd;
 }
 
-void send_data(int handle, void *data, size_t size, struct timeval *tmot)
+void send_data(int sockfd, void *data, size_t size, struct timeval *tmot)
 {
+    int ret;
+    struct timeval tv;
+
     if (data == NULL)
     {
         error("[Error]: Could not send null data\n");
         return;
     }
-    if (size > kDataBufferMax)
+    if (size > MAX_SOCK_BUFFER)
     {
-        error("[Error]: Data too large (max: %dB)\n", kDataBufferMax);
+        error("[Error]: Data too large (max: %dB)\n", MAX_SOCK_BUFFER);
         return;
     }
 
-    int ret;
-    struct timeval t;
-
-    t.tv_sec = tmot == NULL ? default_tmot.tv_sec : tmot->tv_sec;
-    t.tv_usec = tmot == NULL ? default_tmot.tv_usec : tmot->tv_usec;
-    ret = setsockopt(handle, SOL_SOCKET, SO_SNDTIMEO, &t, sizeof(t));
+    tv.tv_sec = tmot == NULL ? default_tv.tv_sec : tmot->tv_sec;
+    tv.tv_usec = tmot == NULL ? default_tv.tv_usec : tmot->tv_usec;
+    ret = setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     if (ret < 0)
     {
         error("[Error]: Failed to set timeout for send operation\n");
         return;
     }
 
-    ret = send(handle, data, size, 0);
+    ret = send(sockfd, data, size, 0);
     if (ret < 0)
-    {
         error("[Error]: Failed to send\n");
-    }
     else
-    {
         info("[Info]: Sent %dB of data\n", ret);
-    }
 }
 
 void recv_data(int handle, void *buffer, size_t size, struct timeval *tmot)
 {
+    int ret;
+    struct timeval tv;
+
     if (buffer == NULL)
     {
         error("[Error]: Buffer must not be null\n");
         return;
     }
-    if (size > kBufferSize)
+    if (size > MAX_SOCK_BUFFER)
     {
-        error("[Error]: Buffer too large (max: %d)\n", kDataBufferMax);
+        error("[Error]: Buffer too large (max: %d)\n", MAX_SOCK_BUFFER);
         return;
     }
 
-    int ret;
-    struct timeval t;
-
-    t.tv_sec = tmot == NULL ? default_tmot.tv_sec : tmot->tv_sec;
-    t.tv_usec = tmot == NULL ? default_tmot.tv_usec : tmot->tv_usec;
-    ret = setsockopt(handle, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof(t));
+    tv.tv_sec = tmot == NULL ? default_tv.tv_sec : tmot->tv_sec;
+    tv.tv_usec = tmot == NULL ? default_tv.tv_usec : tmot->tv_usec;
+    ret = setsockopt(handle, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     if (ret < 0)
     {
         error("[Error]: Failed to set timeout for send operation\n");

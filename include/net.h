@@ -9,8 +9,8 @@
 
 #include "utils.h"
 
-#define kQueueMax 5          // listen queue size
-#define kDataBufferMax 65536 // data buffer size
+#define MAX_SOCK_QUEUE 5      // listen queue size
+#define MAX_SOCK_BUFFER 65536 // socket data buffer size
 
 struct node
 {
@@ -23,7 +23,7 @@ struct node
  *
  * @param ip The IPv4 address of the server.
  * @param port The associated port of the process.
- * @return The socket handle.
+ * @return The socket file descriptor.
  */
 int init_client(const char *ip, u_short port);
 
@@ -31,43 +31,37 @@ int init_client(const char *ip, u_short port);
  * Initializes a socket listening to the given port.
  *
  * @param port The port assigned to the current process.
- * @return The socket handle.
+ * @return The socket file descriptor.
  */
 int init_server(u_short port);
 
 /**
  * Accepts a client connection when the socket is ready.
  *
- * @param handle The listening socket.
+ * @param sockfd The listening socket file descriptor.
  * @param client The place where client info will be stored.
- * @return The new socket handle for communication with the client.
+ * @return The new socket file descriptor for communication with the client.
  */
-int accept_conn(int handle, struct sockaddr_in *client);
+int accept_conn(int sockfd, struct sockaddr_in *client);
 
 /**
  * Sends the given data to the socket.
  *
- * @param handle The established socket.
+ * @param sockfd The established socket file descriptor.
  * @param data The data to be sent.
  * @param size The size of data (max: 64KB).
  * @param tmot The timeout for send operation.
  */
-void send_data(int handle, void *data, size_t size, struct timeval *tmot);
+void send_data(int sockfd, void *data, size_t size, struct timeval *tmot);
 
 /**
  * Receives data from the socket.
  *
- * @param handle The established socket.
+ * @param sockfd The established socket file descriptor.
  * @param buffer The buffer to hold received data.
  * @param size The size of the buffer, and of the received data.
  * @param tmot The timeout for receive operation.
  */
-void recv_data(int handle, void *buffer, size_t size, struct timeval *tmot);
-
-// TODO: consider multithreading in socket
-
-// TODO: disk I/O
-
-// TODO: multithreaded external sorting
+void recv_data(int sockfd, void *buffer, size_t size, struct timeval *tmot);
 
 #endif
