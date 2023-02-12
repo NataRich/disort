@@ -5,6 +5,8 @@ static struct timeval glob_tv = {
     .tv_usec = 0,
 };
 
+static void set_sock_timeout(int sockfd, int optname);
+
 int confirm(int sockfd, struct packet *pkt, short retry)
 {
     int ret;
