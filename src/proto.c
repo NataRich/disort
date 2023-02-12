@@ -55,6 +55,9 @@ void *serialize(struct packet *pkt)
 
     pkt->seq = htons(pkt->seq);
     pkt->size = htonl(pkt->size);
+    pkt->flags = htons(pkt->flags);
+    for (int i = 0; i < 14; i++)
+        pkt->opts[i] = htons(pkt->opts[i]);
 
     return (void *)pkt;
 }
@@ -73,6 +76,9 @@ struct packet *deserialize(void *pkt)
 
     pkt_copy->seq = ntohs(pkt_copy->seq);
     pkt_copy->size = ntohl(pkt_copy->size);
+    pkt_copy->flags = ntohs(pkt_copy->flags);
+    for (int i = 0; i < 14; i++)
+        pkt_copy->opts[i] = ntohs(pkt_copy->opts[i]);
 
     return (void *)pkt;
 }

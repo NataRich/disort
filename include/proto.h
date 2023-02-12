@@ -21,21 +21,20 @@
 
 #define MAX_SOCKET_BUF 65536 // 64KB
 #define MAX_PACKET_BUF 65500 // 655 100-byte records
-#define PAD_SIZE 29          // 36 - 2 - 4 - 1
 
 #define LFM_F_FRST 0x01  // First packet of a part (or an entire file)
 #define LFM_F_PART 0x02  // Part of a larger file
 #define LFM_F_LAST 0x04  // Last packet of a part (or an entire file)
 #define LFM_F_RETRY 0x08 // Request to resend the last part
-#define LFM_F_RECVD 0x10 // Received state
+#define LFM_F_REPLY 0x10 // Reply
 
 struct packet
 {
     u_int16_t seq;
     u_int32_t size;
-    u_int8_t flags;
+    u_int16_t flags;
+    u_int16_t opts[14];
     char buf[MAX_PACKET_BUF];
-    char pad[PAD_SIZE];
 };
 
 /**
