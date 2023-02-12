@@ -8,7 +8,8 @@ static struct timeval glob_tv = {
 int confirm(int sockfd, struct packet *pkt, short retry)
 {
     int ret;
-    struct packet rcv_pkt;
+    struct packet *rcv_pkt;
+    char sock_buf[MAX_SOCKET_BUF];
 
     if (pkt == NULL)
     {
@@ -16,17 +17,36 @@ int confirm(int sockfd, struct packet *pkt, short retry)
         return -1;
     }
 
+    rcv_pkt = NULL;
     retry = retry < 0 ? 0 : retry;
     do
     {
+        if (rcv_pkt != NULL)
+        {
+            free(rcv_pkt);
+            rcv_pkt = NULL;
+        }
+
         set_sock_timeout(sockfd, SO_SNDTIMEO);
         ret = send(sockfd, serialize(pkt), MAX_SOCKET_BUF, 0);
         if (ret < 0)
             continue;
 
         set_sock_timeout(sockfd, SO_RCVTIMEO);
-        ret = recv(sockfd, &rcv_pkt, MAX_SOCKET_BUF, 0);
+        ret = recv(sockfd, sock_buf, MAX_SOCKET_BUF, 0);
+        if (ret > 0)
+        {
+            rcv_pkt = deserialize((void *)sock_buf);
+            if (rcv_pkt == NULL || rcv_pkt->size != pkt->size)
+                continue;
+        }
     } while (ret < 0 && retry-- > 0);
+
+    if (rcv_pkt != NULL)
+    {
+        free(rcv_pkt);
+        rcv_pkt = NULL;
+    }
 
     return ret;
 }
@@ -70,17 +90,18 @@ struct packet *deserialize(void *pkt)
         return NULL;
     }
 
-    struct packet *pkt_copy;
+    struct packet *pkt_copy, *ret_pkt;
 
     pkt_copy = (struct packet *)pkt;
+    ret_pkt = (struct packet *)malloc(sizeof(struct packet));
 
-    pkt_copy->seq = ntohs(pkt_copy->seq);
-    pkt_copy->size = ntohl(pkt_copy->size);
-    pkt_copy->flags = ntohs(pkt_copy->flags);
+    ret_pkt->seq = ntohs(pkt_copy->seq);
+    ret_pkt->size = ntohl(pkt_copy->size);
+    ret_pkt->flags = ntohs(pkt_copy->flags);
     for (int i = 0; i < 14; i++)
-        pkt_copy->opts[i] = ntohs(pkt_copy->opts[i]);
+        ret_pkt->opts[i] = ntohs(pkt_copy->opts[i]);
 
-    return (void *)pkt;
+    return ret_pkt;
 }
 
 /**
