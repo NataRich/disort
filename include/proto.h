@@ -22,11 +22,16 @@
 #define MAX_SOCKET_BUF 65536 // 64KB
 #define MAX_PACKET_BUF 65500 // 655 100-byte records
 
-#define LFM_F_FRST 0x01  // First packet of a part (or an entire file)
-#define LFM_F_PART 0x02  // Part of a larger file
-#define LFM_F_LAST 0x04  // Last packet of a part (or an entire file)
+#define LFM_F_FRST 0x01 // First packet of a part (or an entire file)
+#define IS_FRST_SET(flags) (LFM_F_FRST & flags)
+#define LFM_F_PART 0x02 // Part of a larger file
+#define IS_PART_SET(flags) (LFM_F_PART & flags)
+#define LFM_F_LAST 0x04 // Last packet of a part (or an entire file)
+#define IS_LAST_SET(flags) (LFM_F_LAST & flags)
 #define LFM_F_RETRY 0x08 // Request to resend the last part
+#define IS_RETRY_SET(flags) (LFM_F_RETRY & flags)
 #define LFM_F_REPLY 0x10 // Reply
+#define IS_REPLY_SET(flags) (LFM_F_REPLY & flags)
 
 struct packet
 {
@@ -46,6 +51,14 @@ struct packet
  * @return Positive on success and negative on error.
  */
 int confirm(int sockfd, struct packet *pkt, short retry);
+
+/**
+ * Replies to a confirmation.
+ *
+ * @param sockfd The established socket file descriptor.
+ * @return Positive on success and negative on error.
+ */
+int reply(int sockfd);
 
 /**
  * Sets general custom timeout.

@@ -39,7 +39,11 @@ int confirm(int sockfd, struct packet *pkt, short retry)
         if (ret > 0)
         {
             rcv_pkt = deserialize((void *)sock_buf);
-            if (rcv_pkt == NULL || rcv_pkt->size != pkt->size)
+            if (rcv_pkt == NULL)
+                continue;
+            if (rcv_pkt->size != pkt->size)
+                continue;
+            if (IS_REPLY_SET(rcv_pkt->flags) != 1)
                 continue;
         }
     } while (ret < 0 && retry-- > 0);
@@ -48,6 +52,47 @@ int confirm(int sockfd, struct packet *pkt, short retry)
     {
         free(rcv_pkt);
         rcv_pkt = NULL;
+    }
+
+    if (ret < 0)
+        info("[Info]: Failed to confirm transfer\n");
+
+    return ret;
+}
+
+int reply(int sockfd)
+{
+    int ret;
+    struct packet snd_pkt;
+    struct packet *rcv_pkt;
+    char sock_buf[MAX_SOCKET_BUF];
+
+    set_sock_timeout(sockfd, SO_RCVTIMEO);
+    ret = recv(sockfd, sock_buf, MAX_SOCKET_BUF, 0);
+    if (ret < 0)
+    {
+        info("[Info]: Failed to receive a confirmation\n");
+        return -1;
+    }
+
+    rcv_pkt = deserialize((void *)sock_buf);
+    if (rcv_pkt == NULL)
+        return -1;
+
+    if (IS_FRST_SET(rcv_pkt->flags) != 1)
+    {
+        info("[Info]: Received packet does not have LFM_F_FRST set\n");
+        return -1;
+    }
+
+    snd_pkt.seq = 1000;
+    snd_pkt.size = rcv_pkt->size;
+    snd_pkt.flags = LFM_F_REPLY;
+    ret = send(sockfd, &snd_pkt, MAX_SOCKET_BUF, 0);
+    if (ret < 0)
+    {
+        info("[Info]: Failed to reply a confirmation.");
+        return -1;
     }
 
     return ret;
