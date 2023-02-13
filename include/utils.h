@@ -2,9 +2,10 @@
 #define _UTILS_H_
 
 #include <stdio.h>
-#include <unistd.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <unistd.h>
 
 #define MAX_BUFFER_SIZE 1024
 
