@@ -50,9 +50,10 @@ int accept_conn(int sockfd, struct sockaddr_in *client);
  * @param sockfd The established socket file descriptor.
  * @param data The data to be sent.
  * @param size The size of data (max: 64KB).
- * @param tmot The timeout for send operation.
+ * @param tv The timeout parameters.
+ * @return -1 on error and positive number on bytes sent.
  */
-void send_data(int sockfd, void *data, size_t size, struct timeval *tmot);
+ssize_t send_data(int sockfd, void *data, size_t size, struct timeval *tv);
 
 /**
  * Receives data from the socket.
@@ -60,8 +61,19 @@ void send_data(int sockfd, void *data, size_t size, struct timeval *tmot);
  * @param sockfd The established socket file descriptor.
  * @param buffer The buffer to hold received data.
  * @param size The size of the buffer, and of the received data.
- * @param tmot The timeout for receive operation.
+ * @param tv The timeout parameters.
+ * @return -1 on error and positive number on bytes received.
  */
-void recv_data(int sockfd, void *buffer, size_t size, struct timeval *tmot);
+ssize_t recv_data(int sockfd, void *buffer, size_t size, struct timeval *tv);
+
+/**
+ * Sets socket timeout for the given operation.
+ *
+ * @param sockfd The socket file descriptor.
+ * @param optname The operation.
+ * @param tv The timeout parameters.
+ * @return 0 on success and -1 on error.
+ */
+int set_sock_timeout(int sockfd, int optname, struct timeval *tv);
 
 #endif

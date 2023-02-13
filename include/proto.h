@@ -14,24 +14,25 @@
 // 5) Host1 should check if this size is complete. If not, start over.
 
 #include <stdlib.h>
+#include <string.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 
+#include "net.h"
 #include "utils.h"
 
-#define MAX_SOCKET_BUF 65536 // 64KB
 #define MAX_PACKET_BUF 65500 // 655 100-byte records
 
 #define LFM_F_FRST 0x01 // First packet of a part (or an entire file)
 #define IS_FRST_SET(flags) (LFM_F_FRST & flags)
 #define LFM_F_PART 0x02 // Part of a larger file
-#define IS_PART_SET(flags) (LFM_F_PART & flags)
+#define IS_PART_SET(flags) ((LFM_F_PART & flags) >> 1)
 #define LFM_F_LAST 0x04 // Last packet of a part (or an entire file)
-#define IS_LAST_SET(flags) (LFM_F_LAST & flags)
+#define IS_LAST_SET(flags) ((LFM_F_LAST & flags) >> 2)
 #define LFM_F_RETRY 0x08 // Request to resend the last part
-#define IS_RETRY_SET(flags) (LFM_F_RETRY & flags)
+#define IS_RETRY_SET(flags) ((LFM_F_RETRY & flags) >> 3)
 #define LFM_F_REPLY 0x10 // Reply
-#define IS_REPLY_SET(flags) (LFM_F_REPLY & flags)
+#define IS_REPLY_SET(flags) ((LFM_F_REPLY & flags) >> 4)
 
 struct packet
 {
@@ -39,7 +40,7 @@ struct packet
     u_int32_t size;
     u_int16_t flags;
     u_int16_t opts[14];
-    char buf[MAX_PACKET_BUF];
+    unsigned char buf[MAX_PACKET_BUF];
 };
 
 /**
@@ -56,9 +57,30 @@ int confirm(int sockfd, struct packet *pkt, short retry);
  * Replies to a confirmation.
  *
  * @param sockfd The established socket file descriptor.
+ * @param size The size of the entire file (in bytes).
  * @return Positive on success and negative on error.
  */
-int reply(int sockfd);
+int reply(int sockfd, u_int32_t *size);
+
+/**
+ * Sends packet (with auto serialization & timeout).
+ *
+ * @param sockfd The socket file descriptor.
+ * @param pkt The original data packet to be sent.
+ * @param off The offset of data to send.
+ * @param len The length of data to send.
+ * @return -1 on error and positive long means bytes sent.
+ */
+ssize_t lfm_send(int sockfd, struct packet *pkt);
+
+/**
+ * Receives packet (with auto deserialization & timeout).
+ *
+ * @param sockfd The socket file descriptor.
+ * @param pkt The chunkd of memory to hold received packet.
+ * @return -1 on error and positive long means bytes received.
+ */
+ssize_t lfm_recv(int sockfd, struct packet **pkt);
 
 /**
  * Sets general custom timeout.

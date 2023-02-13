@@ -5,17 +5,15 @@ static struct timeval glob_tv = {
     .tv_usec = 0,
 };
 
-static void set_sock_timeout(int sockfd, int optname);
-
 int confirm(int sockfd, struct packet *pkt, short retry)
 {
     int ret;
     struct packet *rcv_pkt;
-    char sock_buf[MAX_SOCKET_BUF];
+    char sock_buf[MAX_SOCK_BUFFER];
 
     if (pkt == NULL)
     {
-        info("[Info]: File meta packet must not be null\n");
+        error("[Error]: File meta packet must not be NULL\n");
         return -1;
     }
 
@@ -29,13 +27,11 @@ int confirm(int sockfd, struct packet *pkt, short retry)
             rcv_pkt = NULL;
         }
 
-        set_sock_timeout(sockfd, SO_SNDTIMEO);
-        ret = send(sockfd, serialize(pkt), MAX_SOCKET_BUF, 0);
+        ret = send_data(sockfd, serialize(pkt), MAX_SOCK_BUFFER, &glob_tv);
         if (ret < 0)
             continue;
 
-        set_sock_timeout(sockfd, SO_RCVTIMEO);
-        ret = recv(sockfd, sock_buf, MAX_SOCKET_BUF, 0);
+        ret = recv_data(sockfd, sock_buf, MAX_SOCK_BUFFER, &glob_tv);
         if (ret > 0)
         {
             rcv_pkt = deserialize((void *)sock_buf);
@@ -55,23 +51,28 @@ int confirm(int sockfd, struct packet *pkt, short retry)
     }
 
     if (ret < 0)
-        info("[Info]: Failed to confirm transfer\n");
+        error("[Error]: Failed to confirm transfer\n");
 
     return ret;
 }
 
-int reply(int sockfd)
+int reply(int sockfd, u_int32_t *size)
 {
     int ret;
     struct packet snd_pkt;
     struct packet *rcv_pkt;
-    char sock_buf[MAX_SOCKET_BUF];
+    char sock_buf[MAX_SOCK_BUFFER];
 
-    set_sock_timeout(sockfd, SO_RCVTIMEO);
-    ret = recv(sockfd, sock_buf, MAX_SOCKET_BUF, 0);
+    if (size == NULL)
+    {
+        error("[Error]: Size-holding variable must not be NULL\n");
+        return -1;
+    }
+
+    ret = recv_data(sockfd, sock_buf, MAX_SOCK_BUFFER, &glob_tv);
     if (ret < 0)
     {
-        info("[Info]: Failed to receive a confirmation\n");
+        error("[Error]: Failed to receive a confirmation\n");
         return -1;
     }
 
@@ -81,28 +82,95 @@ int reply(int sockfd)
 
     if (IS_FRST_SET(rcv_pkt->flags) != 1)
     {
-        info("[Info]: Received packet does not have LFM_F_FRST set\n");
+        error("[Error]: Received packet does not have LFM_F_FRST set\n");
         return -1;
     }
 
-    snd_pkt.seq = 1000;
+    snd_pkt.seq = 0;
+    *size = rcv_pkt->size;
     snd_pkt.size = rcv_pkt->size;
     snd_pkt.flags = LFM_F_REPLY;
-    ret = send(sockfd, &snd_pkt, MAX_SOCKET_BUF, 0);
+    ret = send_data(sockfd, &snd_pkt, MAX_SOCK_BUFFER, &glob_tv);
     if (ret < 0)
     {
-        info("[Info]: Failed to reply a confirmation.");
+        error("[Error]: Failed to send a reply.");
         return -1;
     }
 
     return ret;
 }
 
+ssize_t lfm_send(int sockfd, struct packet *pkt)
+{
+    void *raw;
+    ssize_t sent, tmp;
+    struct packet copy;
+
+    memcpy(&copy, pkt, sizeof(struct packet));
+
+    sent = 0;
+    raw = serialize(&copy);
+    do
+    {
+        tmp = send_data(sockfd, raw + sent, MAX_SOCK_BUFFER - sent, &glob_tv);
+        if (tmp < 0)
+        {
+            tmp = 0;
+            info("[Info]: Failed to send the packet (%d, %d, %d)"
+                 " at offset %d of length %d (Retrying...)\n",
+                 pkt->seq, pkt->size,
+                 pkt->flags, sent, MAX_SOCK_BUFFER - sent);
+            usleep(500 * 1000); // wait for half a second
+        }
+
+        sent += tmp;
+    } while (sent < MAX_SOCK_BUFFER);
+
+    return sent;
+}
+
+ssize_t lfm_recv(int sockfd, struct packet **pkt)
+{
+    int flag;
+    ssize_t rcvd, tmp;
+    unsigned char buf[MAX_SOCK_BUFFER];
+
+    rcvd = flag = 0;
+    do
+    {
+        // TODO: should not need loops anymore when MSG_WAITALL flag is set on recv()
+        tmp = recv_data(sockfd, buf + rcvd, MAX_SOCK_BUFFER - rcvd, &glob_tv);
+        if (tmp < 0)
+        {
+            tmp = 0;
+            info("[Info]: Failed to receive the last packet at offset %ld"
+                 " with length %ld (Retrying...)\n",
+                 rcvd, MAX_SOCK_BUFFER - rcvd);
+            usleep(500 * 1000); // wait for half a second
+        }
+        else if (tmp == 0)
+        {
+            flag = 1;
+            info("[Info]: End of stream (stopped receiving)\n");
+            break;
+        }
+
+        flag = 0;
+        rcvd += tmp;
+    } while (rcvd < MAX_SOCK_BUFFER);
+
+    if (flag == 1 && rcvd < MAX_SOCK_BUFFER)
+        return rcvd;
+
+    *pkt = deserialize((void *)buf);
+    return rcvd;
+}
+
 int settimeout(struct timeval *tmv)
 {
     if (tmv == NULL)
     {
-        info("[Info]: Timeout must not be NULL\n");
+        error("[Error]: Timeout must not be NULL\n");
         return -1;
     }
 
@@ -116,7 +184,7 @@ void *serialize(struct packet *pkt)
 {
     if (pkt == NULL)
     {
-        info("[Info]: To be serialized data must not be NULL\n");
+        error("[Error]: To be serialized data must not be NULL\n");
         return NULL;
     }
 
@@ -133,7 +201,7 @@ struct packet *deserialize(void *pkt)
 {
     if (pkt == NULL)
     {
-        info("[Info]: To be deserialized data must not be NULL\n");
+        error("[Error]: To be deserialized data must not be NULL\n");
         return NULL;
     }
 
@@ -147,30 +215,7 @@ struct packet *deserialize(void *pkt)
     ret_pkt->flags = ntohs(pkt_copy->flags);
     for (int i = 0; i < 14; i++)
         ret_pkt->opts[i] = ntohs(pkt_copy->opts[i]);
+    memcpy(ret_pkt->buf, pkt_copy->buf, MAX_PACKET_BUF);
 
     return ret_pkt;
-}
-
-/**
- * Sets socket timeout for the given operation.
- *
- * @param sockfd The socket file descriptor.
- * @param optname The operation.
- */
-static void set_sock_timeout(int sockfd, int optname)
-{
-    int ret;
-
-    ret = setsockopt(sockfd, SOL_SOCKET, optname,
-                     (const char *)&glob_tv, sizeof(glob_tv));
-    if (ret < 0)
-    {
-        if (optname == SO_SNDTIMEO)
-            error("[Error]: Failed to set timeout for send op\n");
-        else if (optname == SO_RCVTIMEO)
-            error("[Error]: Failed to set timeout for recv op\n");
-        else
-            error("[Error]: Failed to set timeout for socket op\n");
-        safe_exit(EXIT_FAILURE);
-    }
 }

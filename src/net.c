@@ -1,10 +1,5 @@
 #include "net.h"
 
-static const struct timeval default_tv = {
-    .tv_sec = 5,
-    .tv_usec = 0,
-};
-
 int init_client(const char *ip, u_short port)
 {
     int sockfd;
@@ -86,70 +81,74 @@ int accept_conn(int sockfd, struct sockaddr_in *client)
     return nsockfd;
 }
 
-void send_data(int sockfd, void *data, size_t size, struct timeval *tmot)
+ssize_t send_data(int sockfd, void *data, size_t size, struct timeval *tv)
 {
-    int ret;
-    struct timeval tv;
-
     if (data == NULL)
     {
         error("[Error]: Could not send null data\n");
-        return;
+        return -1;
     }
     if (size > MAX_SOCK_BUFFER)
     {
         error("[Error]: Data too large (max: %dB)\n", MAX_SOCK_BUFFER);
-        return;
+        return -1;
     }
-
-    tv.tv_sec = tmot == NULL ? default_tv.tv_sec : tmot->tv_sec;
-    tv.tv_usec = tmot == NULL ? default_tv.tv_usec : tmot->tv_usec;
-    ret = setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    if (ret < 0)
+    if (tv == NULL)
     {
-        error("[Error]: Failed to set timeout for send operation\n");
-        return;
+        error("[Error]: Timeout must notbe NULL\n");
+        return -1;
     }
 
-    ret = send(sockfd, data, size, 0);
-    if (ret < 0)
-        error("[Error]: Failed to send\n");
-    else
-        info("[Info]: Sent %dB of data\n", ret);
+    if (set_sock_timeout(sockfd, SO_SNDTIMEO, tv) < 0)
+        return -1;
+    return send(sockfd, data, size, 0);
 }
 
-void recv_data(int handle, void *buffer, size_t size, struct timeval *tmot)
+ssize_t recv_data(int sockfd, void *buffer, size_t size, struct timeval *tv)
 {
-    int ret;
-    struct timeval tv;
-
     if (buffer == NULL)
     {
         error("[Error]: Buffer must not be null\n");
-        return;
+        return -1;
     }
     if (size > MAX_SOCK_BUFFER)
     {
         error("[Error]: Buffer too large (max: %d)\n", MAX_SOCK_BUFFER);
-        return;
+        return -1;
+    }
+    if (tv == NULL)
+    {
+        error("[Error]: Timeout must notbe NULL\n");
+        return -1;
     }
 
-    tv.tv_sec = tmot == NULL ? default_tv.tv_sec : tmot->tv_sec;
-    tv.tv_usec = tmot == NULL ? default_tv.tv_usec : tmot->tv_usec;
-    ret = setsockopt(handle, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    if (ret < 0)
+    if (set_sock_timeout(sockfd, SO_RCVTIMEO, tv) < 0)
+        return -1;
+    return recv(sockfd, buffer, size, MSG_WAITALL);
+}
+
+int set_sock_timeout(int sockfd, int optname, struct timeval *tv)
+{
+    int ret, len;
+
+    if (tv == NULL)
     {
-        error("[Error]: Failed to set timeout for send operation\n");
-        return;
+        error("[Error]: Timeout must not be NULL\n");
+        return -1;
     }
 
-    ret = recv(handle, buffer, size, 0);
+    len = sizeof(struct timeval);
+    ret = setsockopt(sockfd, SOL_SOCKET, optname, (const char *)tv, len);
     if (ret < 0)
     {
-        error("[Error]: Failed to receive\n");
+        if (optname == SO_SNDTIMEO)
+            error("[Error]: Failed to set timeout for send op\n");
+        else if (optname == SO_RCVTIMEO)
+            error("[Error]: Failed to set timeout for recv op\n");
+        else
+            error("[Error]: Failed to set timeout for socket op\n");
+        return -1;
     }
-    else
-    {
-        info("[Info]: Received %dB of data\n", ret);
-    }
+
+    return 0;
 }
