@@ -25,27 +25,27 @@ int ftransfer(int sockfd, char *path)
     if (fexists(path) != 0)
     {
         error("[Error]: File (%s) does not exist\n", path);
-        return -1;
+        return ERR_FILEIO;
     }
 
     fp = fopen(path, "rb");
     if (fp == NULL)
     {
         error("[Error]: Failed to open the file (%s)\n", path);
-        return -1;
+        return ERR_FILEIO;
     }
 
     if (fseek(fp, 0, SEEK_END) < 0)
     {
         error("[Error]: Failed to seek the end of the file (%s)\n", path);
-        return -1;
+        return ERR_FILEIO;
     }
 
     size = ftell(fp);
     if (size < 0)
     {
         error("[Error]: Failed to ftell (%s)\n", path);
-        return -1;
+        return ERR_FILEIO;
     }
 
     info("[Info]: File (%s) size is %d\n", path, size);
@@ -59,7 +59,7 @@ int ftransfer(int sockfd, char *path)
     pkt.flags = LFM_F_FRST;
     memset(pkt.buf, 0, MAX_PACKET_BUF);
     if (confirm(sockfd, &pkt, 3) < 0)
-        return -1;
+        return ERR_CONFIRM;
 
     // Transfer phase
     info("[Info]: Confirmation succeeded. Started transfering...\n");
@@ -67,7 +67,7 @@ int ftransfer(int sockfd, char *path)
     if (fseek(fp, off, SEEK_SET) < 0)
     {
         error("[Error]: Failed to seek the start of the file (%s)\n", path);
-        return -1;
+        return ERR_FILEIO;
     }
 
     do
@@ -92,12 +92,12 @@ int ftransfer(int sockfd, char *path)
         memcpy(pkt.buf, data_buf, pkt.size);
         sent = lfm_send(sockfd, &pkt);
 
-        info("[Info]: Sent %dB of data (%dB real)\n", sent, pkt.size);
+        info("[Info]: Sent %ldB; read %dB\n", sent, pkt.size);
     } while (off < size);
 
-    info("[Info]: File (%s) transfer completed.\n", path);
+    info("[Info]: Sending completed\n");
     fclose(fp);
-    return 0;
+    return SUCCESS;
 }
 
 int freceive(int sockfd, char *path)
@@ -110,26 +110,26 @@ int freceive(int sockfd, char *path)
     if (path == NULL)
     {
         error("[Error]: Path must not be NULL\n");
-        return -1;
+        return ERR_FILEIO; // -> exit
     }
 
     // Reply phase
     if (reply(sockfd, &fsize) < 0)
-        return -1;
+        return ERR_FILEIO;
 
     info("[Info]: Expect to receive %dB of data\n", fsize);
 
     if (fcreate(path) < 0)
     {
         error("[Error]: Failed to create a file for writing\n");
-        return -1;
+        return ERR_FILEIO;
     }
 
     fp = fopen(path, "ab");
     if (fp == NULL)
     {
         error("[Error]: Failed to open a file for writing\n");
-        return -1;
+        return ERR_FILEIO;
     }
 
     // Receive phase
@@ -145,23 +145,26 @@ int freceive(int sockfd, char *path)
         }
 
         rcvd = lfm_recv(sockfd, &pkt);
-        if (rcvd < MAX_SOCK_BUFFER)
+        if (rcvd <= 0)
         {
-            // TODO: initiate retry the entire file
-            error("[Error]: Incomplete packet received\n");
             fclose(fp);
-            return -1;
+            return ERR_SOCKIO; // -> exit
+        }
+        else if (rcvd < MAX_SOCK_BUFFER)
+        {
+            fclose(fp);
+            return ERR_PARTIAL; // -> retry
         }
 
         fwrite(pkt->buf, pkt->size, 1, fp);
 
-        info("[Info]: Received %dB of data (%dB real)\n", rcvd, pkt->size);
+        info("[Info]: Received %ldB; wrote %dB\n", rcvd, pkt->size);
     } while (IS_LAST_SET(pkt->flags) != 1);
 
     if (pkt != NULL)
         free(pkt);
 
-    info("[Info]: Data fully persisted in %s\n", path);
+    info("[Info]: Stored %ldB of data in %s\n", fsize, path);
     fclose(fp);
-    return 0;
+    return SUCCESS;
 }
