@@ -191,7 +191,7 @@ void *serialize(struct packet *pkt)
     pkt->seq = htons(pkt->seq);
     pkt->size = htonl(pkt->size);
     pkt->flags = htons(pkt->flags);
-    for (int i = 0; i < 14; i++)
+    for (int i = 0; i < PACKET_PAD; i++)
         pkt->opts[i] = htons(pkt->opts[i]);
 
     return (void *)pkt;
@@ -213,7 +213,7 @@ struct packet *deserialize(void *pkt)
     ret_pkt->seq = ntohs(pkt_copy->seq);
     ret_pkt->size = ntohl(pkt_copy->size);
     ret_pkt->flags = ntohs(pkt_copy->flags);
-    for (int i = 0; i < 14; i++)
+    for (int i = 0; i < PACKET_PAD; i++)
         ret_pkt->opts[i] = ntohs(pkt_copy->opts[i]);
     memcpy(ret_pkt->buf, pkt_copy->buf, MAX_PACKET_BUF);
 

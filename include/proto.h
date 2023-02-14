@@ -21,6 +21,7 @@
 #include "net.h"
 #include "utils.h"
 
+#define PACKET_PAD 14        // number of padding shorts
 #define MAX_PACKET_BUF 65500 // 655 100-byte records
 
 #define LFM_F_FRST 0x01 // First packet of a part (or an entire file)
@@ -37,9 +38,9 @@
 struct packet
 {
     u_int16_t seq;
-    u_int32_t size;
     u_int16_t flags;
-    u_int16_t opts[14];
+    u_int32_t size;
+    u_int16_t opts[PACKET_PAD];
     unsigned char buf[MAX_PACKET_BUF];
 };
 
