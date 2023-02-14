@@ -105,15 +105,18 @@ void *transfer_thread(void *args)
         case ERR_FILEIO:
             error("[Error][t%d]: File I/O failure\n", self);
             close(sockfd);
+            free(args);
             return NULL;
         case ERR_CONFIRM:
             error("[Error][t%d]: Confirmation failure\n", self);
             close(sockfd);
+            free(args);
             return NULL;
 
         default:
             error("[Error][t%d]: Unknown error type\n", self);
             close(sockfd);
+            free(args);
             return NULL;
         }
 
@@ -123,7 +126,7 @@ void *transfer_thread(void *args)
                 free(pkt);
 
             ret = lfm_recv(sockfd, &pkt);
-            if (ret < 0)
+            if (ret < 0 && nretry < MAX_RETRY)
             {
                 nretry++;
                 info("[Info][t%d]: Waiting for reply...\n", self);
@@ -133,12 +136,14 @@ void *transfer_thread(void *args)
             {
                 error("[Error][t%d]: Socket closed without reply\n", self);
                 close(sockfd);
+                free(args);
                 return NULL;
             }
             else if (ret < MAX_SOCK_BUFFER)
             {
                 error("[Error][t%d]: Incomplete packet received\n", self);
                 close(sockfd);
+                free(args);
                 return NULL;
             }
             else if (IS_REPLY_SET(pkt->flags) == 1)
@@ -156,6 +161,7 @@ void *transfer_thread(void *args)
             {
                 error("[Error][t%d]: Incorrect communication\n", self);
                 close(sockfd);
+                free(args);
                 return NULL;
             }
         } while (nretry < MAX_RETRY);
