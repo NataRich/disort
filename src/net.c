@@ -39,6 +39,12 @@ int init_server(u_short port)
         safe_exit(EXIT_FAILURE);
     }
 
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
+    {
+        error("[Error]: Failed to set resuseable address\n");
+        safe_exit(EXIT_FAILURE);
+    }
+
     sockaddr.sin_addr.s_addr = INADDR_ANY;
     sockaddr.sin_family = AF_INET;
     sockaddr.sin_port = htons(port);
@@ -85,7 +91,7 @@ ssize_t send_data(int sockfd, void *data, size_t size, struct timeval *tv)
 {
     if (data == NULL)
     {
-        error("[Error]: Could not send null data\n");
+        error("[Error]: NULL data to send\n");
         return -1;
     }
     if (size > MAX_SOCK_BUFFER)
@@ -95,7 +101,7 @@ ssize_t send_data(int sockfd, void *data, size_t size, struct timeval *tv)
     }
     if (tv == NULL)
     {
-        error("[Error]: Timeout must notbe NULL\n");
+        error("[Error]: NULL timeout\n");
         return -1;
     }
 
@@ -108,7 +114,7 @@ ssize_t recv_data(int sockfd, void *buffer, size_t size, struct timeval *tv)
 {
     if (buffer == NULL)
     {
-        error("[Error]: Buffer must not be null\n");
+        error("[Error]: NULL receive buffer\n");
         return -1;
     }
     if (size > MAX_SOCK_BUFFER)
@@ -118,7 +124,7 @@ ssize_t recv_data(int sockfd, void *buffer, size_t size, struct timeval *tv)
     }
     if (tv == NULL)
     {
-        error("[Error]: Timeout must notbe NULL\n");
+        error("[Error]: NULL timeout\n");
         return -1;
     }
 
