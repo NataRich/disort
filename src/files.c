@@ -16,68 +16,71 @@ int fcreate(char *path)
 
 int ftransfer(int sockfd, char *path)
 {
+    int ret, npkt;
     FILE *fp;
     u_int16_t seqno;
     struct packet pkt;
-    ssize_t size, sent, off;
+    ssize_t fsize, sent, off;
     unsigned char data_buf[MAX_PACKET_BUF];
 
     if (fexists(path) != 0)
     {
-        error("[Error]: File (%s) does not exist\n", path);
+        error("[Error]: %s does not exist\n", path);
         return ERR_FILEIO;
     }
 
     fp = fopen(path, "rb");
     if (fp == NULL)
     {
-        error("[Error]: Failed to open the file (%s)\n", path);
+        error("[Error]: Failed to fopen %s\n", path);
         return ERR_FILEIO;
     }
 
     if (fseek(fp, 0, SEEK_END) < 0)
     {
-        error("[Error]: Failed to seek the end of the file (%s)\n", path);
+        error("[Error]: Failed to fseek %s (SEEK_END)\n", path);
         return ERR_FILEIO;
     }
 
-    size = ftell(fp);
-    if (size < 0)
+    fsize = ftell(fp);
+    if (fsize < 0)
     {
-        error("[Error]: Failed to ftell (%s)\n", path);
+        error("[Error]: Failed to ftell %s\n", path);
         return ERR_FILEIO;
     }
 
-    info("[Info]: File (%s) size is %d\n", path, size);
+    info("[Info]: %s is %dB in size\n", path, fsize);
 
     seqno = 0;
 
     // Confirm phase
-    info("[Info]: Started confirming...\n");
+    info("[Info]: Confirming...\n");
     pkt.seq = seqno++;
-    pkt.size = (u_int32_t)size;
+    pkt.size = (u_int32_t)fsize;
     pkt.flags = LFM_F_FRST;
     memset(pkt.buf, 0, MAX_PACKET_BUF);
-    if (confirm(sockfd, &pkt, 3) < 0)
-        return ERR_CONFIRM;
+    ret = confirm(sockfd, &pkt);
+    if (ret != SUCCESS)
+        return ret;
 
     // Transfer phase
-    info("[Info]: Confirmation succeeded. Started transfering...\n");
-    off = 0;
-    if (fseek(fp, off, SEEK_SET) < 0)
+    info("[Info]: Transfering...\n");
+    if (fseek(fp, 0, SEEK_SET) < 0)
     {
-        error("[Error]: Failed to seek the start of the file (%s)\n", path);
+        error("[Error]: Failed to seek %s (SEEK_SET)\n", path);
         return ERR_FILEIO;
     }
 
+    off = npkt = 0;
     do
     {
+        npkt++;
         sent = 0;
 
         pkt.seq = seqno++;
-        if (off + MAX_PACKET_BUF > size) // last part
+        if (off + MAX_PACKET_BUF > fsize) // last part
         {
-            pkt.size = size - off;
+            pkt.size = fsize - off;
             pkt.flags = LFM_F_PART | LFM_F_LAST;
         }
         else
@@ -91,48 +94,54 @@ int ftransfer(int sockfd, char *path)
         fread(data_buf, pkt.size, 1, fp);
         memcpy(pkt.buf, data_buf, pkt.size);
         sent = lfm_send(sockfd, &pkt);
+        if (sent == ERR_SOCKIO)
+        {
+            fclose(fp);
+            return sent; // -> close socket and start over
+        }
+    } while (off < fsize);
 
-        info("[Info]: Sent %ldB; read %dB\n", sent, pkt.size);
-    } while (off < size);
-
-    info("[Info]: Sending completed\n");
+    info("[Info]: Sent=%ldB via %d packets\n", fsize, npkt);
     fclose(fp);
     return SUCCESS;
 }
 
 int freceive(int sockfd, char *path)
 {
+    int ret;
     FILE *fp;
-    ssize_t rcvd;
+    ssize_t rcvd, trcvd;
     u_int32_t fsize;
     struct packet *pkt;
 
     if (path == NULL)
     {
         error("[Error]: Path must not be NULL\n");
-        return ERR_FILEIO; // -> exit
+        return ERR_FILEIO;
     }
 
-    // Reply phase
-    if (reply(sockfd, &fsize) < 0)
-        return ERR_FILEIO;
+    // Acknowledge phase
+    ret = ack(sockfd, &fsize);
+    if (ret != SUCCESS)
+        return ret;
 
-    info("[Info]: Expect to receive %dB of data\n", fsize);
+    info("[Info]: Expect to receive %dB\n", fsize);
 
     if (fcreate(path) < 0)
     {
-        error("[Error]: Failed to create a file for writing\n");
+        error("[Error]: Failed to create %s\n", path);
         return ERR_FILEIO;
     }
 
     fp = fopen(path, "ab");
     if (fp == NULL)
     {
-        error("[Error]: Failed to open a file for writing\n");
+        error("[Error]: Failed to open %s\n", path);
         return ERR_FILEIO;
     }
 
     // Receive phase
+    trcvd = 0;
     pkt = NULL;
     do
     {
@@ -145,26 +154,24 @@ int freceive(int sockfd, char *path)
         }
 
         rcvd = lfm_recv(sockfd, &pkt);
-        if (rcvd <= 0)
+        if (rcvd == ERR_SOCKIO || IS_PART_SET(pkt->flags) != 1)
         {
             fclose(fp);
-            return ERR_SOCKIO; // -> exit
+            return ERR_SOCKIO; // -> close socket and wait
         }
-        else if (rcvd < MAX_SOCK_BUFFER)
+
+        trcvd += pkt->size;
+        if (fwrite(pkt->buf, pkt->size, 1, fp) < 1)
         {
+            error("[Error]: Failed to fwrite\n");
+            free(pkt);
             fclose(fp);
-            return ERR_PARTIAL; // -> retry
+            return ERR_FILEIO;
         }
-
-        fwrite(pkt->buf, pkt->size, 1, fp);
-
-        info("[Info]: Received %ldB; wrote %dB\n", rcvd, pkt->size);
     } while (IS_LAST_SET(pkt->flags) != 1);
 
-    if (pkt != NULL)
-        free(pkt);
-
-    info("[Info]: Stored %ldB of data in %s\n", fsize, path);
+    info("[Info]: Wrote %ldB (exp %ldB) in %s\n", trcvd, fsize, path);
+    free(pkt);
     fclose(fp);
-    return SUCCESS;
+    return trcvd == fsize ? SUCCESS : ERR_PARTIAL; // -> use the same socket and start over (wait)
 }

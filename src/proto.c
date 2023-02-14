@@ -5,99 +5,75 @@ static struct timeval glob_tv = {
     .tv_usec = 0,
 };
 
-int confirm(int sockfd, struct packet *pkt, short retry)
+int confirm(int sockfd, struct packet *pkt)
 {
     int ret;
     struct packet *rcv_pkt;
-    char sock_buf[MAX_SOCK_BUFFER];
 
     if (pkt == NULL)
     {
-        error("[Error]: File meta packet must not be NULL\n");
-        return -1;
+        error("[Error]: NULL meta packet\n");
+        return ERR_SOCKIO; // -> close socket then retry
     }
 
-    rcv_pkt = NULL;
-    retry = retry < 0 ? 0 : retry;
-    do
-    {
-        if (rcv_pkt != NULL)
-        {
-            free(rcv_pkt);
-            rcv_pkt = NULL;
-        }
+    ret = lfm_send(sockfd, pkt);
+    if (ret <= 0)
+        return ERR_SOCKIO; // -> close socket then retry
 
-        ret = send_data(sockfd, serialize(pkt), MAX_SOCK_BUFFER, &glob_tv);
-        if (ret < 0)
-            continue;
+    ret = lfm_recv(sockfd, &rcv_pkt);
+    if (ret <= 0)
+        return ERR_SOCKIO; // -> close socket then retry
 
-        ret = recv_data(sockfd, sock_buf, MAX_SOCK_BUFFER, &glob_tv);
-        if (ret > 0)
-        {
-            rcv_pkt = deserialize((void *)sock_buf);
-            if (rcv_pkt == NULL)
-                continue;
-            if (rcv_pkt->size != pkt->size)
-                continue;
-            if (IS_REPLY_SET(rcv_pkt->flags) != 1)
-                continue;
-        }
-    } while (ret < 0 && retry-- > 0);
-
-    if (rcv_pkt != NULL)
+    if (rcv_pkt->size != pkt->size)
     {
         free(rcv_pkt);
-        rcv_pkt = NULL;
+        return ERR_CONFIRM; // -> use the same socket and retry
+    }
+    if (IS_REPLY_SET(rcv_pkt->flags) != 1)
+    {
+        free(rcv_pkt);
+        return ERR_CONFIRM; // -> use the same socket and retry
     }
 
-    if (ret < 0)
-        error("[Error]: Failed to confirm transfer\n");
-
-    return ret;
+    free(rcv_pkt);
+    return SUCCESS;
 }
 
-int reply(int sockfd, u_int32_t *size)
+int ack(int sockfd, u_int32_t *size)
 {
     int ret;
     struct packet snd_pkt;
     struct packet *rcv_pkt;
-    char sock_buf[MAX_SOCK_BUFFER];
 
     if (size == NULL)
     {
         error("[Error]: Size-holding variable must not be NULL\n");
-        return -1;
+        return ERR_SOCKIO; // -> close socket then wait
     }
 
-    ret = recv_data(sockfd, sock_buf, MAX_SOCK_BUFFER, &glob_tv);
-    if (ret < 0)
-    {
-        error("[Error]: Failed to receive a confirmation\n");
-        return -1;
-    }
-
-    rcv_pkt = deserialize((void *)sock_buf);
-    if (rcv_pkt == NULL)
-        return -1;
+    ret = lfm_recv(sockfd, &rcv_pkt);
+    if (ret <= 0)
+        return ERR_SOCKIO; // -> close socket then retry
 
     if (IS_FRST_SET(rcv_pkt->flags) != 1)
     {
-        error("[Error]: Received packet does not have LFM_F_FRST set\n");
-        return -1;
+        free(rcv_pkt);
+        return ERR_CONFIRM; // -> close socket then wait
     }
 
     snd_pkt.seq = 0;
     *size = rcv_pkt->size;
     snd_pkt.size = rcv_pkt->size;
     snd_pkt.flags = LFM_F_REPLY;
-    ret = send_data(sockfd, &snd_pkt, MAX_SOCK_BUFFER, &glob_tv);
-    if (ret < 0)
+    ret = lfm_send(sockfd, &snd_pkt);
+    if (ret <= 0)
     {
-        error("[Error]: Failed to send a reply.");
-        return -1;
+        free(rcv_pkt);
+        return ERR_SOCKIO; // -> close socket then wait
     }
 
-    return ret;
+    free(rcv_pkt);
+    return SUCCESS;
 }
 
 ssize_t lfm_send(int sockfd, struct packet *pkt)
@@ -113,15 +89,8 @@ ssize_t lfm_send(int sockfd, struct packet *pkt)
     do
     {
         tmp = send_data(sockfd, raw + sent, MAX_SOCK_BUFFER - sent, &glob_tv);
-        if (tmp < 0)
-        {
-            tmp = 0;
-            info("[Info]: Failed to send the packet (%d, %d, %d)"
-                 " at offset %d of length %d (Retrying...)\n",
-                 pkt->seq, pkt->size,
-                 pkt->flags, sent, MAX_SOCK_BUFFER - sent);
-            usleep(500 * 1000); // wait for half a second
-        }
+        if (tmp <= 0)
+            return ERR_SOCKIO; // close
 
         sent += tmp;
     } while (sent < MAX_SOCK_BUFFER);
@@ -131,37 +100,13 @@ ssize_t lfm_send(int sockfd, struct packet *pkt)
 
 ssize_t lfm_recv(int sockfd, struct packet **pkt)
 {
-    int flag;
-    ssize_t rcvd, tmp;
+    ssize_t rcvd;
     unsigned char buf[MAX_SOCK_BUFFER];
 
-    rcvd = flag = 0;
-    do
-    {
-        // Note: should not need loops anymore when MSG_WAITALL flag is set on recv()
-        tmp = recv_data(sockfd, buf + rcvd, MAX_SOCK_BUFFER - rcvd, &glob_tv);
-        if (tmp < 0)
-        {
-            tmp = 0;
-            info("[Info]: Failed to receive the last packet at offset %ld"
-                 " with length %ld (Retrying...)\n",
-                 rcvd, MAX_SOCK_BUFFER - rcvd);
-            usleep(500 * 1000); // wait for half a second
-        }
-        else if (tmp == 0)
-        {
-            flag = 1;
-            info("[Info]: End of stream (stopped receiving)\n");
-            break;
-        }
-
-        flag = 0;
-        rcvd += tmp;
-    } while (rcvd < MAX_SOCK_BUFFER);
-
-    if (flag == 1 && rcvd < MAX_SOCK_BUFFER)
-        return rcvd;
-
+    // MSG_WAITALL is set, so recv() will block until buffer is full or timeout
+    rcvd = recv_data(sockfd, buf, MAX_SOCK_BUFFER, &glob_tv);
+    if (rcvd <= 0)
+        return ERR_SOCKIO; // close
     *pkt = deserialize((void *)buf);
     return rcvd;
 }

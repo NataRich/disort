@@ -28,8 +28,8 @@
 #define SUCCESS 0
 #define ERR_FILEIO -1
 #define ERR_SOCKIO -2
-#define ERR_PARTIAL -3
-#define ERR_CONFIRM -4
+#define ERR_PARTIAL -3 // incomplete packet
+#define ERR_CONFIRM -4 // confirmation failure
 
 struct packet
 {
@@ -45,26 +45,25 @@ struct packet
  *
  * @param sockfd The established socket file descriptor.
  * @param pkt The meta packet to be confirmed.
- * @param retyr The number of retries on error.
- * @return Positive on success and negative on error.
+ * @return 0 on success and negative on error.
  */
-int confirm(int sockfd, struct packet *pkt, short retry);
+int confirm(int sockfd, struct packet *pkt);
 
 /**
- * Replies to a confirmation.
+ * Acknowledges a confirmation.
  *
  * @param sockfd The established socket file descriptor.
  * @param size The size of the entire file (in bytes).
- * @return Positive on success and negative on error.
+ * @return 0 on success and negative on error.
  */
-int reply(int sockfd, u_int32_t *size);
+int ack(int sockfd, u_int32_t *size);
 
 /**
  * Sends packet (with auto serialization & timeout).
  *
  * @param sockfd The socket file descriptor.
  * @param pkt The original data packet to be sent.
- * @return -1 on error and positive long means bytes sent.
+ * @return negative on error and positive long means bytes sent.
  */
 ssize_t lfm_send(int sockfd, struct packet *pkt);
 
@@ -73,7 +72,7 @@ ssize_t lfm_send(int sockfd, struct packet *pkt);
  *
  * @param sockfd The socket file descriptor.
  * @param pkt The chunkd of memory to hold received packet.
- * @return -1 on error and positive long means bytes received.
+ * @return negative on error and positive long means bytes received.
  */
 ssize_t lfm_recv(int sockfd, struct packet **pkt);
 

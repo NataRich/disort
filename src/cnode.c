@@ -7,15 +7,14 @@
 #include "files.h"
 #include "utils.h"
 
-#define MAX_RETRY 5
-
 // static const struct node dnode = {.addr = "127.0.0.1", .port = 8000};
+
+void try_freceive(int sockfd, char *path, int *keep);
 
 int main(int argc, char *argv[])
 {
-    int sockfd, ret, flag;
+    int o_sockfd, n_sockfd, keep;
     u_int16_t port;
-    struct packet pkt;
     struct sockaddr_in client;
 
     if (argc != 3)
@@ -39,55 +38,76 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    sockfd = init_server(port);
-    sockfd = accept_conn(sockfd, &client);
+    o_sockfd = init_server(port);
+
+    keep = 1;
+    do
+    {
+        n_sockfd = accept_conn(o_sockfd, &client);
+        try_freceive(n_sockfd, argv[2], &keep);
+    } while (keep == 1);
+
+    info("[Info]: Successful freceive()\n");
+    exit(EXIT_SUCCESS);
+}
+
+void try_freceive(int sockfd, char *path, int *keep)
+{
+    int ret;
+    struct packet pkt;
 
     do
     {
-        flag = 0;
-        ret = freceive(sockfd, argv[2]);
-        switch (ret)
+        ret = freceive(sockfd, path);
+        if (ret == SUCCESS)
         {
-        case SUCCESS:
-            pkt.seq = 0;
-            pkt.size = 0;
+            pkt.seq = pkt.size = 0;
             pkt.flags = LFM_F_REPLY;
             ret = lfm_send(sockfd, &pkt);
-            if (ret < 0)
-            {
-                error("[Error]: Failed to send retry request\n");
-                close(sockfd);
-                exit(EXIT_FAILURE);
-            }
-            break;
+            if (ret <= 0)
+                error("[Error]: Failed to send reply request\n");
 
-        case ERR_FILEIO:
-        case ERR_SOCKIO:
-            error("[Error]: File/Socket I/O failure\n");
+            *keep = 0; // program exits
             close(sockfd);
-            exit(EXIT_FAILURE);
-
-        case ERR_PARTIAL:
-            flag = 1;
-            pkt.seq = 0;
-            pkt.size = 0;
+            return;
+        }
+        else if (ret == ERR_PARTIAL)
+        {
+            pkt.seq = pkt.size = 0;
             pkt.flags = LFM_F_RETRY;
             ret = lfm_send(sockfd, &pkt);
-            if (ret < 0)
+            if (ret <= 0)
             {
-                error("[Error]: Failed to send retry request\n");
+                error("[Error]: Failed to send retry request. Waiting for new socket connection\n");
                 close(sockfd);
-                exit(EXIT_FAILURE);
+                return;
             }
-            break;
 
-        default:
+            break; // wait for new confirmation
+        }
+        else if (ret == ERR_CONFIRM)
+        {
+            error("[Error]: Confirmation failure. Waiting for new socket connection\n");
+            close(sockfd);
+            return;
+        }
+        else if (ret == ERR_SOCKIO)
+        {
+            error("[Error]: Socket error. Waiting for new socket connection\n");
+            close(sockfd);
+            return;
+        }
+        else if (ret == ERR_FILEIO)
+        {
+            error("[Error]: File I/O failure\n");
+            close(sockfd);
+            exit(EXIT_FAILURE);
+        }
+        else
+        {
             error("[Error]: Unknown error type\n");
             close(sockfd);
             exit(EXIT_FAILURE);
         }
-    } while (flag > 0);
-
-    close(sockfd);
-    exit(EXIT_SUCCESS);
+    } while (1);
 }

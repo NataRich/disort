@@ -9,7 +9,11 @@
 #include "files.h"
 #include "utils.h"
 
-#define MAX_RETRY 5
+#define IMPROP -1
+#define PACKERR -2
+#define SOCKERR -3
+#define FILEERR -4
+#define UNKNOWN -10
 
 struct thread_args
 {
@@ -25,6 +29,7 @@ static const struct node cnodes[] = {
     },
 };
 
+void try_ftransfer(int sockfd, pid_t tid, char *path, int *keep, int *err);
 void *transfer_thread(void *args);
 
 int main(int argc, char *argv[])
@@ -77,104 +82,100 @@ int main(int argc, char *argv[])
         pthread_join(tids[i], NULL);
 
     info("[Info]: Executed all\n");
-
     exit(EXIT_SUCCESS);
 }
 
 void *transfer_thread(void *args)
 {
     pid_t self;
-    int sockfd, ret, flag, nretry;
-    struct packet *pkt;
+    int sockfd, keep, err;
     struct thread_args *targs;
 
-    pkt = NULL;
+    err = 0;
+    keep = 1;
     self = syscall(__NR_gettid);
     targs = (struct thread_args *)args;
-    sockfd = init_client(targs->addr, targs->port);
+
     do
     {
-        flag = 0;
-        nretry = 0;
-        ret = ftransfer(sockfd, targs->path);
-        switch (ret)
+        sockfd = init_client(targs->addr, targs->port);
+        try_ftransfer(sockfd, self, targs->path, &keep, &err);
+    } while (keep == 1);
+
+    if (err != 0)
+        error("[Error][t%d]: Error code %d\n", self, err);
+    else
+        info("[Info][t%d]: Successful ftransfer()\n", self);
+    free(args);
+    return NULL;
+}
+
+void try_ftransfer(int sockfd, pid_t tid, char *path, int *keep, int *err)
+{
+    int ret, rcvd;
+    struct packet *rcv_pkt;
+
+    do
+    {
+        ret = ftransfer(sockfd, path);
+        if (ret == SUCCESS)
         {
-        case SUCCESS:
-            break;
-
-        case ERR_FILEIO:
-            error("[Error][t%d]: File I/O failure\n", self);
-            close(sockfd);
-            free(args);
-            return NULL;
-        case ERR_CONFIRM:
-            error("[Error][t%d]: Confirmation failure\n", self);
-            close(sockfd);
-            free(args);
-            return NULL;
-
-        default:
-            error("[Error][t%d]: Unknown error type\n", self);
-            close(sockfd);
-            free(args);
-            return NULL;
-        }
-
-        do
-        {
-            if (pkt != NULL)
-                free(pkt);
-
-            ret = lfm_recv(sockfd, &pkt);
-            if (ret < 0 && nretry < MAX_RETRY)
+            rcvd = lfm_recv(sockfd, &rcv_pkt); // should receive a reply or retry packet
+            if (rcvd == ERR_SOCKIO)
             {
-                nretry++;
-                info("[Info][t%d]: Waiting for reply...\n", self);
-                sleep(5); // sleep 5 seconds because lfm_recv default timeout is 15 seconds
-            }
-            else if (ret == 0)
-            {
-                error("[Error][t%d]: Socket closed without reply\n", self);
+                error("[Error][t%d]: Improper termination of socket (sockerr)\n", tid);
+                *err = IMPROP;
+                *keep = 0; // thread exits
                 close(sockfd);
-                free(args);
-                return NULL;
+                return;
             }
-            else if (ret < MAX_SOCK_BUFFER)
+            else if (IS_RETRY_SET(rcv_pkt->flags) == 1)
+                continue;
+            else if (IS_REPLY_SET(rcv_pkt->flags) == 1)
             {
-                error("[Error][t%d]: Incomplete packet received\n", self);
+                info("[Info][t%d]: Socket termination\n", tid);
+                *keep = 0; // thread_exits
                 close(sockfd);
-                free(args);
-                return NULL;
-            }
-            else if (IS_REPLY_SET(pkt->flags) == 1)
-            {
-                info("[Info][t%d]: Successful transfer\n", self);
-                break;
-            }
-            else if (IS_RETRY_SET(pkt->flags) == 1)
-            {
-                info("[Info][t%d]: Retransfering\n", self);
-                flag = 1;
-                break;
+                free(rcv_pkt);
+                return;
             }
             else
             {
-                error("[Error][t%d]: Incorrect communication\n", self);
+                error("[Error][t%d]: Improper termination of socket (packeterr)\n", tid);
+                *err = PACKERR;
+                *keep = 0; // thread exits
                 close(sockfd);
-                free(args);
-                return NULL;
+                free(rcv_pkt);
+                return;
             }
-        } while (nretry < MAX_RETRY);
-
-        if (pkt != NULL)
-            free(pkt);
-
-    } while (flag > 0);
-
-    sleep(5); // next step...
-
-    info("[Info][t%d]: TO THE END!\n", self);
-    close(sockfd);
-    free(args);
-    return NULL;
+        }
+        else if (ret == ERR_SOCKIO)
+        {
+            error("[Error][t%d]: Socket error. Initiating a new socket conection\n", tid);
+            *err = SOCKERR;
+            close(sockfd);
+            return;
+        }
+        else if (ret == ERR_CONFIRM) // may end up in ERR_SOCKIO
+        {
+            error("[Error][t%d]: Confirmation failure. Retrying\n", tid);
+            continue;
+        }
+        else if (ret == ERR_FILEIO)
+        {
+            error("[Error][t%d]: File I/O failure\n", tid);
+            *err = FILEERR;
+            *keep = 0; // thread exits due to error
+            close(sockfd);
+            return;
+        }
+        else
+        {
+            error("[Error][t%d]: Unknown error type\n", tid);
+            *err = UNKNOWN;
+            *keep = 0; // thread exits due to error
+            close(sockfd);
+            return;
+        }
+    } while (1);
 }

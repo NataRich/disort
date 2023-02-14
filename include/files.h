@@ -37,7 +37,7 @@ int ftransfer(int sockfd, char *path);
  *
  * @param sockfd The socket file descriptor.
  * @param path The path to which data are written.
- * @return 0 on success and -1 on error.
+ * @return 0 on success and negative on errors.
  */
 int freceive(int sockfd, char *path);
 
