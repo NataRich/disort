@@ -138,7 +138,7 @@ ssize_t lfm_recv(int sockfd, struct packet **pkt)
     rcvd = flag = 0;
     do
     {
-        // TODO: should not need loops anymore when MSG_WAITALL flag is set on recv()
+        // Note: should not need loops anymore when MSG_WAITALL flag is set on recv()
         tmp = recv_data(sockfd, buf + rcvd, MAX_SOCK_BUFFER - rcvd, &glob_tv);
         if (tmp < 0)
         {

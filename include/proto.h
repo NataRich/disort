@@ -3,16 +3,6 @@
 
 // Large File Multipart Protocol (LFM)
 
-// 1) Host1 sends meta data of files and then waits for Host2 to reply.
-//    The meta data should include at least the size of the entire file.
-//    The reply should contain at least the received size.
-// 2) Once Host1 receives the correct reply from Host2, Host1 can send
-//    binary data over until all data have been sent.
-// 3) Having sent all the data, Host1 waits for Host2 to reply.
-// 4) Having received all the data, Host2 sends Host1 a reply.
-//    The reply should contain at least the accumulated size of data.
-// 5) Host1 should check if this size is complete. If not, start over.
-
 #include <stdlib.h>
 #include <string.h>
 #include <arpa/inet.h>
@@ -68,8 +58,6 @@ int reply(int sockfd, u_int32_t *size);
  *
  * @param sockfd The socket file descriptor.
  * @param pkt The original data packet to be sent.
- * @param off The offset of data to send.
- * @param len The length of data to send.
  * @return -1 on error and positive long means bytes sent.
  */
 ssize_t lfm_send(int sockfd, struct packet *pkt);
