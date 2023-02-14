@@ -64,15 +64,15 @@ int ftransfer(int sockfd, char *path)
     // Transfer phase
     info("[Info]: Confirmation succeeded. Started transfering...\n");
     off = 0;
+    if (fseek(fp, off, SEEK_SET) < 0)
+    {
+        error("[Error]: Failed to seek the start of the file (%s)\n", path);
+        return -1;
+    }
+
     do
     {
         sent = 0;
-
-        if (fseek(fp, off, SEEK_SET) < 0)
-        {
-            error("[Error]: Failed to seek the end of the file (%s)\n", path);
-            return -1;
-        }
 
         pkt.seq = seqno++;
         if (off + MAX_PACKET_BUF > size) // last part
