@@ -25,6 +25,12 @@
 #define LFM_F_REPLY 0x10 // Reply
 #define IS_REPLY_SET(flags) ((LFM_F_REPLY & flags) >> 4)
 
+#define SUCCESS 0
+#define ERR_FILEIO -1
+#define ERR_SOCKIO -2
+#define ERR_PARTIAL -3
+#define ERR_CONFIRM -4
+
 struct packet
 {
     u_int16_t seq;
