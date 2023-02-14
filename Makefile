@@ -4,7 +4,7 @@ INC_DIR := include
 BIN_DIR := bin
 SRC_DIR := src
 OBJ_DIR := $(BIN_DIR)/obj
-CFLAGS := -c -Wall -I$(INC_DIR)/  # -I shortens the include path to header files
+CFLAGS := -c -g -Wall -I$(INC_DIR)/  # -I shortens the include path to header files
 COFLAG := -O2
 CSTD := gnu99
 
@@ -52,4 +52,13 @@ $(OBJ_DIR)/net.o: $(SRC_DIR)/net.c $(INC_DIR)/net.h
 .PHONY: clean
 clean:
 	rm -f *.dat
+	rm -f ./$(DOUT) ./$(COUT)
+
+.PHONY: clean_dat
+clean_dat:
+	rm -f *.dat
+
+.PHONY: clean_out
+clean_out:
+	rm ./$(OBJ_DIR)/*.o
 	rm -f ./$(DOUT) ./$(COUT)
