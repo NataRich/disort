@@ -14,6 +14,22 @@ int fcreate(char *path)
     return 0;
 }
 
+long fgetsize(const char *path)
+{
+    long ret;
+    FILE *fp;
+
+    fp = fopen(path, "rb");
+    if (fp == NULL)
+        return -1;
+    if (fseek(fp, 0, SEEK_END) < 0)
+        return -1;
+
+    ret = ftell(fp);
+    fclose(fp);
+    return ret;
+}
+
 int ftransfer(int sockfd, char *path)
 {
     int ret, npkt;

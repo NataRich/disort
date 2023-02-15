@@ -16,6 +16,14 @@
 int fexists(char *path);
 
 /**
+ * Gets the file size in bytes.
+ *
+ * @param path The file path.
+ * @return negative on error and positive means file size in bytes.
+ */
+long fgetsize(const char *path);
+
+/**
  * Creates a file if not exist, or erases the data otherwise.
  *
  * @param path The path of the new file.
