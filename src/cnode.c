@@ -4,8 +4,11 @@
 #include <stdlib.h>
 
 #include "net.h"
+#include "sort.h"
 #include "files.h"
 #include "utils.h"
+
+#define USABLEMEM 1024 * 1024 * 1024 // 1GB
 
 // static const struct node dnode = {.addr = "127.0.0.1", .port = 8000};
 
@@ -16,6 +19,7 @@ int main(int argc, char *argv[])
     int o_sockfd, n_sockfd, keep;
     u_int16_t port;
     struct sockaddr_in client;
+    char path[30];
 
     if (argc != 3)
     {
@@ -46,6 +50,10 @@ int main(int argc, char *argv[])
         n_sockfd = accept_conn(o_sockfd, &client);
         try_freceive(n_sockfd, argv[2], &keep);
     } while (keep == 1);
+
+    memset(path, 0, 30);
+    memcpy(path, argv[2], strlen(argv[2]) + 1);
+    ext_sort(path, USABLEMEM);
 
     info("[Info]: Successful freceive()\n");
     exit(EXIT_SUCCESS);

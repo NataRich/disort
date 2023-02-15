@@ -9,7 +9,7 @@ COFLAG := -O2
 CSTD := gnu99
 
 CSRCS := $(SRC_DIR)/cnode.c $(SRC_DIR)/net.c $(SRC_DIR)/utils.c $(SRC_DIR)/proto.c \
-		 $(SRC_DIR)/files.c
+		 $(SRC_DIR)/files.c $(SRC_DIR)/sort.c
 DSRCS := $(SRC_DIR)/dnode.c $(SRC_DIR)/net.c $(SRC_DIR)/utils.c $(SRC_DIR)/proto.c \
 		 $(SRC_DIR)/files.c
 COBJS := $(CSRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)  # substitution
@@ -46,6 +46,9 @@ $(OBJ_DIR)/utils.o: $(SRC_DIR)/utils.c $(INC_DIR)/utils.h
 $(OBJ_DIR)/files.o: $(SRC_DIR)/files.c $(INC_DIR)/utils.h
 	$(CC) $(CFLAGS) -std=$(CSTD) $< -o $@
 
+$(OBJ_DIR)/sort.o: $(SRC_DIR)/sort.c $(INC_DIR)/utils.h
+	$(CC) $(CFLAGS) -std=$(CSTD) $< -o $@
+
 $(OBJ_DIR)/net.o: $(SRC_DIR)/net.c $(INC_DIR)/net.h
 	$(CC) $(CFLAGS) -std=$(CSTD) $< -o $@
 
@@ -56,7 +59,7 @@ clean:
 
 .PHONY: clean_dat
 clean_dat:
-	rm -f *.dat
+	rm -f *.dat *.sorted
 
 .PHONY: clean_out
 clean_out:
