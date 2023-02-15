@@ -82,6 +82,7 @@ int main(int argc, char *argv[])
         pthread_join(tids[i], NULL);
 
     info("[Info]: Executed all\n");
+    free(tids);
     exit(EXIT_SUCCESS);
 }
 
